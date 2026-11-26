@@ -1,0 +1,37 @@
+{# Reusable Jinja macros #}
+{% macro port_chips(ports) -%}
+{%- if ports and ports|length > 0 -%}
+<span class="chips">
+  {% for p in ports %}<span class="chip port">{{ p }}</span>{% endfor %}
+</span>
+{%- else -%}
+<span class="muted">∅（无出端口 / 硬件丢弃）</span>
+{%- endif -%}
+{%- endmacro %}
+
+{% macro via_badge(via, reason=None) -%}
+{%- if via == 'hardware' -%}
+<span class="badge hw">硬件转发</span>
+{%- else -%}
+<span class="badge cpu">CPU 转发{% if reason == 'miss' %} · 未命中{% elif reason == 'hw_action' %} · 表项指定 punt{% endif %}</span>
+{%- endif -%}
+{%- endmacro %}
+
+{% macro correct_badge(ok) -%}
+{%- if ok -%}<span class="badge ok">端口完全一致 ✓</span>
+{%- else -%}<span class="badge bad">端口不一致 ✗</span>{%- endif -%}
+{%- endmacro %}
+
+{% macro status_badge(status) -%}
+{%- if status == 'published' -%}<span class="badge ok">已发布</span>
+{%- elif status == 'no_solution' -%}<span class="badge bad">无解</span>
+{%- elif status == 'publish_failed' -%}<span class="badge bad">发布失败</span>
+{%- elif status == 'invalid_rules' -%}<span class="badge warn">规则校验失败</span>
+{%- else -%}<span class="badge">{{ status }}</span>{%- endif -%}
+{%- endmacro %}
+
+{% macro match_label(m) -%}
+{%- if m == 'S,G' -%}<span class="badge sg">按源和组 (S,G)</span>
+{%- elif m == '*,G' -%}<span class="badge star">按组 (*,G)</span>
+{%- else -%}<span class="muted">—</span>{%- endif -%}
+{%- endmacro %}

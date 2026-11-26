@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% from "_macros.html" import status_badge %}
+{% block title %}版本记录 · 组播硬件表演练台{% endblock %}
+
+{% block content %}
+<section class="panel">
+  <h2>发布 / 尝试记录（SQLite）</h2>
+  <p class="muted small">
+    只有 <span class="badge ok">已发布</span> 的最新一条是活动配置；无解、发布失败、规则非法的记录仅作审计，不会替换正在使用的整份配置。
+  </p>
+  <table class="data-table">
+    <thead><tr>
+      <th>修订</th><th>版本</th><th>状态</th><th>时间</th>
+      <th>表项</th><th>CPU 帧</th><th>上限 (HW/CPU)</th><th>信息</th><th></th>
+    </tr></thead>
+    <tbody>
+    {% for r in revisions %}
+      <tr class="{{ 'active-row' if r.id == active_id else '' }}">
+        <td>#{{ r.id }}{% if r.id == active_id %} <span class="badge ok">使用中</span>{% endif %}</td>
+        <td>{% if r.version_no %}v{{ r.version_no }}{% else %}—{% endif %}</td>
+        <td>{{ status_badge(r.status) }}</td>
+        <td class="small">{{ r.created_at }}</td>
+        <td>{{ r.entries if r.entries is not none else '—' }}</td>
+        <td>{{ r.cpu_frames if r.cpu_frames is not none else '—' }}</td>
+        <td class="small">{{ r.hw_limit if r.hw_limit is not none else '—' }} /
+            {{ r.cpu_limit if r.cpu_limit is not none else '—' }}</td>
+        <td class="small message-cell">{{ r.message or '' }}</td>
+        <td><a class="btn tiny ghost" href="{{ url_for('web.revision_detail', revision_id=r.id) }}">详情</a></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}

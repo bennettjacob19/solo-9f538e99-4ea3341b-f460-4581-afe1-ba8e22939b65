@@ -1,0 +1,142 @@
+{% extends "base.html" %}
+{% from "_macros.html" import port_chips, via_badge, correct_badge %}
+{% block title %}回放 / 试发 · 组播硬件表演练台{% endblock %}
+
+{% block content %}
+<section class="panel">
+  <div class="panel-head">
+    <h2>回放与任意源 / 组试发</h2>
+    <form method="get" action="{{ url_for('web.replay_page') }}" class="inline-form" id="rev-picker">
+      <label class="small muted">使用已发布整份配置：</label>
+      <select name="revision_id" onchange="this.form.submit()">
+        {% for r in revisions %}
+        <option value="{{ r.id }}" {{ 'selected' if rev and r.id == rev.id else '' }}>
+          v{{ r.version_no }} · #{{ r.id }} · {{ r.created_at }}
+        </option>
+        {% endfor %}
+      </select>
+    </form>
+  </div>
+
+  {% if not snapshot %}
+    <p class="muted">SQLite 中没有已发布配置，无法回放或试发。请先到「演练提交」发布。</p>
+  {% else %}
+  <p class="muted small">
+    当前快照 <b>v{{ snapshot.version }}</b>（修订 #{{ rev.id }}）·
+    硬件表项 {{ snapshot.rules|length }}/{{ snapshot.limits.hw }} ·
+    CPU 上限 {{ snapshot.limits.cpu }} 帧。
+    每轮回放在开始时一次性读取该整份配置；换版不影响已经开始的回放。
+  </p>
+
+  <form method="post" action="{{ url_for('web.replay_run_form') }}" class="inline-form">
+    <input type="hidden" name="revision_id" value="{{ rev.id }}">
+    <button type="submit" class="btn primary">▶ 开始整轮回放（{{ snapshot.traffic|length }} 条流）</button>
+  </form>
+
+  {% if run %}
+    {% set res = run.detail.result %}
+    <div class="summary-cards">
+      <div class="card"><span>总帧数</span><b>{{ run.total_frames }}</b></div>
+      <div class="card hw"><span>硬件转发帧</span><b>{{ run.hw_frames }}</b></div>
+      <div class="card cpu"><span>回放 CPU 帧总数</span><b>{{ run.cpu_frames }}</b></div>
+      <div class="card {{ 'ok' if run.all_correct else 'bad' }}">
+        <span>端口核对</span><b>{% if run.all_correct %}全部一致 ✓{% else %}存在不一致 ✗{% endif %}</b>
+      </div>
+      <div class="card {{ 'ok' if run.cpu_frames <= snapshot.limits.cpu else 'bad' }}">
+        <span>CPU 上限 {{ snapshot.limits.cpu }}</span>
+        <b>{% if run.cpu_frames <= snapshot.limits.cpu %}守住 ✓{% else %}超限 ✗{% endif %}</b>
+      </div>
+    </div>
+    <p class="small muted">回放记录 #{{ run.id }} · {{ run.created_at }} ·
+      使用修订 #{{ run.revision_id }}（v{{ run.detail.version }}）</p>
+
+    <table class="data-table">
+      <thead><tr>
+        <th>源 S</th><th>组 G</th><th>帧数</th>
+        <th>命中硬件</th><th>转发方式</th>
+        <th>实际出端口</th><th>监听应到端口</th><th>核对</th>
+      </tr></thead>
+      <tbody>
+      {% for row in res.rows %}
+        <tr class="{{ 'row-bad' if not row.correct else '' }}">
+          <td><code>{{ row.source }}</code></td>
+          <td><code>{{ row.group }}</code></td>
+          <td>{{ row.frames }}
+            {% if row.via == 'cpu' %}<div class="small cpu-text">计 {{ row.cpu_frames }} CPU 帧</div>{% endif %}
+          </td>
+          <td>
+            {% if row.hw_match %}{{ row.hw_match }}
+              {% if row.hw_action == 'cpu' %} · 动作 cpu{% endif %}
+            {% else %}<span class="muted">未命中</span>{% endif %}
+          </td>
+          <td>{{ via_badge(row.via, row.cpu_reason) }}</td>
+          <td>{{ port_chips(row.actual_ports) }}</td>
+          <td>{{ port_chips(row.required_ports) }}
+              <div class="small muted">监听匹配 {{ row.listening_match or '无（应丢弃）' }}</div></td>
+          <td>{{ correct_badge(row.correct) }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  {% endif %}
+  {% endif %}
+</section>
+
+<section class="panel">
+  <h2>试发一帧（任意源和组，包括监听表 / 回放里没有的）</h2>
+  <form method="post" action="{{ url_for('web.trial_send_form') }}" class="trial-form">
+    <input type="hidden" name="revision_id" value="{{ rev.id if rev else '' }}">
+    <label>源 IP <input name="source" value="{{ send_form.source }}" placeholder="任意，如 198.51.100.7" required></label>
+    <label>组地址 <input name="group" value="{{ send_form.group }}" placeholder="任意 IPv4 组，如 239.10.2.2" required></label>
+    <button type="submit" class="btn primary">发送一帧</button>
+  </form>
+  {% if trial_error %}<p class="badge bad" style="margin-top:10px">{{ trial_error }}</p>{% endif %}
+
+  {% if trial and trial.ok %}
+    {% set f = trial.frame %}
+    <div class="trial-result {{ 'is-bad' if not f.correct else '' }}">
+      <div class="trial-head">
+        <code>({{ f.source }}, {{ f.group }})</code>
+        {{ via_badge(f.via, f.cpu_reason) }}
+        {{ correct_badge(f.correct) }}
+        <span class="muted small">依据 v{{ trial.version }} 快照 #{{ trial.revision_id }}</span>
+      </div>
+      <div class="trial-cols">
+        <div>
+          <div class="small muted">实际出端口</div>
+          <div class="ports-big">{{ port_chips(f.actual_ports) }}</div>
+        </div>
+        <div>
+          <div class="small muted">监听表要求端口（匹配 {{ f.listening_match or '无表项 → 空集/丢弃' }}）</div>
+          <div class="ports-big">{{ port_chips(f.required_ports) }}</div>
+        </div>
+        <div>
+          <div class="small muted">硬件匹配</div>
+          <div>{{ f.hw_match or '未命中 → 交 CPU' }}{% if f.hw_action == 'cpu' %}（表项动作指定 CPU）{% endif %}</div>
+        </div>
+      </div>
+    </div>
+  {% endif %}
+</section>
+
+{% if recent_runs %}
+<section class="panel">
+  <h2>最近回放记录</h2>
+  <table class="data-table">
+    <thead><tr><th>#</th><th>时间</th><th>配置修订</th><th>总帧</th><th>硬件帧</th><th>CPU 帧总数</th><th>核对</th><th></th></tr></thead>
+    <tbody>
+    {% for r in recent_runs %}
+      <tr>
+        <td>{{ r.id }}</td><td class="small">{{ r.created_at }}</td>
+        <td>#{{ r.revision_id }}</td>
+        <td>{{ r.total_frames }}</td><td>{{ r.hw_frames }}</td>
+        <td><b>{{ r.cpu_frames }}</b></td>
+        <td>{% if r.all_correct %}<span class="badge ok">一致</span>{% else %}<span class="badge bad">不一致</span>{% endif %}</td>
+        <td><a class="btn tiny ghost" href="{{ url_for('web.replay_page', run=r.id, revision_id=r.revision_id) }}">查看</a></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+{% endblock %}

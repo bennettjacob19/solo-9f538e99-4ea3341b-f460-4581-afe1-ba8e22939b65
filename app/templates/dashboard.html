@@ -1,0 +1,162 @@
+{% extends "base.html" %}
+{% from "_macros.html" import status_badge, port_chips %}
+{% block title %}演练提交 · 组播硬件表演练台{% endblock %}
+
+{% block content %}
+
+<section class="active-banner">
+  {% if active %}
+  <div>
+    <div class="banner-title">
+      当前已发布配置
+      <span class="badge ok">v{{ active.version_no }}</span>
+      <span class="muted">#{{ active.id }} · {{ active.created_at }}</span>
+    </div>
+    <div class="banner-stats">
+      <span>硬件表项 <b>{{ active.entries }}</b> / 上限 {{ active.hw_limit }}</span>
+      <span>预计回放 CPU 帧 <b>{{ active.cpu_frames }}</b> / 上限 {{ active.cpu_limit }}</span>
+      <span>监听表 {{ active.payload.listening|length }} 条</span>
+    </div>
+  </div>
+  <div class="banner-actions">
+    <a class="btn ghost" href="{{ url_for('web.rules_page', revision_id=active.id) }}">查看已装规则</a>
+    <a class="btn primary" href="{{ url_for('web.replay_page', revision_id=active.id) }}">去回放 / 试发</a>
+  </div>
+  {% else %}
+  <div class="banner-title">SQLite 中暂无已发布配置（系统应已播种示例，请检查数据库）。</div>
+  {% endif %}
+</section>
+
+{% if validation and validation.issues %}
+<div class="panel error-panel">
+  <h3>输入校验未通过，未进行求解或发布</h3>
+  <ul class="issue-list">
+    {% for msg in field_errors.get('_all', []) %}<li>{{ msg }}</li>{% endfor %}
+  </ul>
+</div>
+{% endif %}
+
+{% if result and not result.ok %}
+<div class="panel error-panel">
+  <h3>
+    {% if result.code == 'no_solution' %}无解：两项上限无法同时守住
+    {% elif result.code == 'publish_failed' %}模拟发布失败
+    {% else %}候选规则校验失败{% endif %}
+  </h3>
+  <p class="error-message">{{ result.message }}</p>
+  {% if result.solution %}
+  <div class="diag-grid">
+    <div>硬件上限：<b>{{ result.solution.hw_limit }}</b> 条</div>
+    <div>CPU 上限：<b>{{ result.solution.cpu_limit }}</b> 帧</div>
+    {% if result.solution.min_cpu_within_hw is not none %}
+    <div>硬件上限内最少 CPU 帧：<b>{{ result.solution.min_cpu_within_hw }}</b></div>
+    {% endif %}
+    {% if result.solution.absolute_min_cpu is not none %}
+    <div>不限硬件表项时最少 CPU 帧：<b>{{ result.solution.absolute_min_cpu }}</b></div>
+    {% endif %}
+    {% if result.solution.min_entries_for_cpu_cap is not none %}
+    <div>满足 CPU 上限至少需要表项：<b>{{ result.solution.min_entries_for_cpu_cap }}</b></div>
+    {% endif %}
+  </div>
+  {% endif %}
+  <p class="keep-note">↩ 已忽略本次候选，继续使用 SQLite 中已发布的配置
+    {% if result.active_revision_id %}（当前活动版本 #{{ result.active_revision_id }}）{% endif %}。
+  </p>
+</div>
+{% endif %}
+
+<section class="panel">
+  <div class="panel-head">
+    <h2>提交新一轮演练</h2>
+    <div class="examples">
+      <span class="muted">填入示例：</span>
+      <button type="button" class="btn tiny" data-example="three_ports">三端口组</button>
+      <button type="button" class="btn tiny" data-example="mixed">混合 S,G/*,G</button>
+      <button type="button" class="btn tiny" data-example="impossible">无解场景</button>
+      <button type="button" class="btn tiny warn-btn" data-example="publish_fail">下发失败</button>
+    </div>
+  </div>
+
+  <form method="post" action="{{ url_for('web.submit_drill_form') }}" id="drill-form">
+
+    <h3 class="section-title">① 监听表（组地址 · 接收端口 · 指定源或任意源）</h3>
+    <table class="grid-table" id="listening-table">
+      <thead>
+      <tr><th style="width:24%">源 IP（留空或 * 为任意源）</th>
+          <th style="width:26%">组地址</th>
+          <th>接收端口（逗号分隔，可任意多个）</th>
+          <th style="width:46px"></th></tr>
+      </thead>
+      <tbody>
+      {% for row in form_model.listening %}
+      <tr class="l-row">
+        <td><input name="l_source" value="{{ row.source }}" placeholder="* 或 10.0.0.1"></td>
+        <td><input name="l_group" value="{{ row.group }}" placeholder="239.1.1.1"></td>
+        <td><input name="l_ports" value="{{ row.ports }}" placeholder="1,2,3"></td>
+        <td><button type="button" class="btn tiny danger row-del">删</button></td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    <button type="button" class="btn ghost tiny" id="add-listening">+ 添加监听行</button>
+
+    <h3 class="section-title">② 回放流量（源 · 组 · 帧数）</h3>
+    <table class="grid-table" id="traffic-table">
+      <thead>
+      <tr><th style="width:30%">源 IP</th>
+          <th style="width:30%">组地址</th>
+          <th style="width:22%">帧数</th>
+          <th style="width:46px"></th></tr>
+      </thead>
+      <tbody>
+      {% for row in form_model.traffic %}
+      <tr class="t-row">
+        <td><input name="t_source" value="{{ row.source }}" placeholder="10.0.0.1"></td>
+        <td><input name="t_group" value="{{ row.group }}" placeholder="239.1.1.1"></td>
+        <td><input name="t_frames" value="{{ row.frames }}" placeholder="1000" inputmode="numeric"></td>
+        <td><button type="button" class="btn tiny danger row-del">删</button></td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    <button type="button" class="btn ghost tiny" id="add-traffic">+ 添加流量行</button>
+
+    <h3 class="section-title">③ 两项上限与发布选项</h3>
+    <div class="limits-row">
+      <label>硬件表项上限（条）
+        <input name="hw_limit" type="number" min="0" step="1"
+               value="{{ form_model.hw_limit }}" style="width:140px">
+      </label>
+      <label>回放 CPU 帧上限（帧）
+        <input name="cpu_limit" type="number" min="0" step="1"
+               value="{{ form_model.cpu_limit }}" style="width:160px">
+      </label>
+      <label class="check-label">
+        <input type="checkbox" name="simulate_fail" value="1"
+               {{ 'checked' if form_model.simulate_fail else '' }}>
+        模拟发布到交换机失败（验证报错并继续使用 SQLite 已发布配置）
+      </label>
+    </div>
+
+    <div class="form-actions">
+      <button type="submit" class="btn primary big">求解配置，守得住两项上限即发布</button>
+      <span class="muted small">
+        求解器按组比较「(*,G) 聚合 + 例外」与「逐条 (S,G) offload」，再用 DP 在硬件表项预算内最小化 CPU 帧。
+      </span>
+    </div>
+  </form>
+</section>
+
+<section class="panel info-panel">
+  <h3>转发与核对规则</h3>
+  <ul class="plain">
+    <li>硬件先匹配精确 <b>(S,G)</b>，再匹配 <b>(*,G)</b>，前者优先。</li>
+    <li>硬件表项动作：<b>0～2 个出端口</b>（0 个即硬件丢弃）或<b>交 CPU</b>；未命中也交 CPU。</li>
+    <li>CPU 严格按监听表（同样 (S,G) 优先于 (*,G)）转发。</li>
+    <li>每帧的<b>实际出端口集合</b>必须与匹配到的监听表端口集合<b>完全一致</b>（顺序无关）。</li>
+    <li>求解结果对任意源都正确：除枚举精确源外，另用一个“通用源”探针覆盖所有未列出的源。</li>
+  </ul>
+</section>
+
+<script id="examples-data" type="application/json">{{ examples | tojson }}</script>
+{% endblock %}

@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+{% from "_macros.html" import status_badge, port_chips, match_label %}
+{% block title %}修订 #{{ rev.id }} · 版本记录{% endblock %}
+
+{% block content %}
+<section class="panel">
+  <div class="panel-head">
+    <h2>修订 #{{ rev.id }}
+      {% if rev.version_no %}<span class="badge ok">v{{ rev.version_no }}</span>{% endif %}
+      {{ status_badge(rev.status) }}
+      {% if rev.id == active_id %}<span class="badge ok">当前使用中</span>{% endif %}
+    </h2>
+    <a class="btn ghost tiny" href="{{ url_for('web.revisions_page') }}">← 返回列表</a>
+  </div>
+  <p class="muted small">{{ rev.created_at }}
+    {% if rev.simulate_fail %} · 本次请求勾选了“模拟发布失败”{% endif %}</p>
+  {% if rev.message %}<p class="{{ 'error-message' if rev.status != 'published' else '' }}">{{ rev.message }}</p>{% endif %}
+
+  {% if just_published and rev.status == 'published' %}
+  <div class="panel ok-panel" style="margin:12px 0">
+    ✅ 发布成功：新配置已写入 SQLite 并成为活动版本。可前往
+    <a href="{{ url_for('web.replay_page', revision_id=rev.id) }}">回放 / 试发</a>
+    或 <a href="{{ url_for('web.rules_page', revision_id=rev.id) }}">查看已装规则</a>。
+  </div>
+  {% endif %}
+
+  {% set p = rev.payload %}
+
+  {% if rev.status == 'published' %}
+    <div class="banner-stats">
+      <span>硬件表项 <b>{{ p.rules|length }}</b> / {{ p.limits.hw }}</span>
+      <span>回放 CPU 帧 <b>{{ p.solver.cpu_frames }}</b> / {{ p.limits.cpu }}</span>
+      <span>总帧 {{ p.solver.total_frames }} · 硬件帧 {{ p.solver.hardware_frames }}</span>
+      {% if p.publish and p.publish.transaction %}<span>事务 <code>{{ p.publish.transaction }}</code></span>{% endif %}
+    </div>
+
+    <h3 class="section-title">已发布硬件规则</h3>
+    <table class="data-table">
+      <thead><tr><th>#</th><th>匹配</th><th>源</th><th>组</th><th>动作 / 端口</th></tr></thead>
+      <tbody>
+      {% for rule in p.rules %}
+        <tr>
+          <td class="muted">{{ loop.index }}</td>
+          <td>{{ match_label('S,G' if rule.source else '*,G') }}</td>
+          <td><code>{{ rule.source or '*' }}</code></td>
+          <td><code>{{ rule.group }}</code></td>
+          <td>{% if rule.action == 'cpu' %}<span class="badge cpu">交 CPU</span>
+              {% else %}{{ port_chips(rule.ports) }}{% endif %}</td>
+        </tr>
+      {% else %}
+        <tr><td colspan="5" class="muted">硬件表为空，全部未命中交 CPU。</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+
+    <h3 class="section-title">监听表</h3>
+    <table class="data-table">
+      <thead><tr><th>源</th><th>组</th><th>端口</th></tr></thead>
+      <tbody>
+      {% for e in p.listening %}
+        <tr><td><code>{{ e.source or '*' }}</code></td>
+            <td><code>{{ e.group }}</code></td>
+            <td>{{ port_chips(e.ports) }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+
+    <h3 class="section-title">回放流量</h3>
+    <table class="data-table">
+      <thead><tr><th>源</th><th>组</th><th>帧数</th></tr></thead>
+      <tbody>
+      {% for f in p.traffic %}
+        <tr><td><code>{{ f.source }}</code></td><td><code>{{ f.group }}</code></td><td>{{ f.frames }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    {% if p.solution %}
+      <h3 class="section-title">求解诊断</h3>
+      <pre class="json-box">{{ p.solution | tojson(indent=2) }}</pre>
+    {% endif %}
+    {% if p.would_publish %}
+      <h3 class="section-title">已求出但未能发布的候选规则（未生效）</h3>
+      <table class="data-table">
+        <thead><tr><th>匹配</th><th>源</th><th>组</th><th>动作 / 端口</th></tr></thead>
+        <tbody>
+        {% for rule in p.would_publish.rules %}
+          <tr><td>{{ match_label('S,G' if rule.source else '*,G') }}</td>
+              <td><code>{{ rule.source or '*' }}</code></td>
+              <td><code>{{ rule.group }}</code></td>
+              <td>{% if rule.action == 'cpu' %}<span class="badge cpu">交 CPU</span>
+                  {% else %}{{ port_chips(rule.ports) }}{% endif %}</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    {% endif %}
+    {% if p.input %}
+      <h3 class="section-title">提交内容（规范化后）</h3>
+      <pre class="json-box">{{ p.input | tojson(indent=2) }}</pre>
+    {% endif %}
+  {% endif %}
+</section>
+{% endblock %}

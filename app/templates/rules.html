@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+{% from "_macros.html" import port_chips, match_label %}
+{% block title %}已装规则 · 组播硬件表演练台{% endblock %}
+
+{% block content %}
+<section class="panel">
+  <div class="panel-head">
+    <h2>当前已安装硬件规则</h2>
+    <form method="get" action="{{ url_for('web.rules_page') }}" class="inline-form">
+      <label class="small muted">查看已发布版本：</label>
+      <select name="revision_id" onchange="this.form.submit()">
+        {% for r in revisions if r.status == 'published' %}
+        <option value="{{ r.id }}" {{ 'selected' if rev and r.id == rev.id else '' }}>
+          v{{ r.version_no }} · #{{ r.id }} · {{ r.created_at }}
+        </option>
+        {% endfor %}
+      </select>
+    </form>
+  </div>
+
+  {% if not snapshot %}
+    <p class="muted">暂无已发布配置。</p>
+  {% else %}
+  <p class="muted small">
+    版本 v{{ snapshot.version }}（修订 #{{ rev.id }}，{{ rev.created_at }}） ·
+    硬件表项 <b>{{ snapshot.rules|length }}</b> / 上限 {{ snapshot.limits.hw }} ·
+    预计 CPU 帧 <b>{{ snapshot.solver.cpu_frames }}</b> / 上限 {{ snapshot.limits.cpu }}
+    {% if snapshot.publish and snapshot.publish.transaction %}
+      · 发布事务 <code>{{ snapshot.publish.transaction }}</code>
+    {% endif %}
+  </p>
+
+  <table class="data-table">
+    <thead><tr>
+      <th>#</th><th>匹配方式</th><th>指定源 S</th><th>组 G</th>
+      <th>动作 / 出端口</th>
+    </tr></thead>
+    <tbody>
+    {% for rule in snapshot.rules %}
+      <tr>
+        <td class="muted">{{ loop.index }}</td>
+        <td>{{ match_label('S,G' if rule.source else '*,G') }}</td>
+        <td><code>{{ rule.source or '*（任意源）' }}</code></td>
+        <td><code>{{ rule.group }}</code></td>
+        <td>
+          {% if rule.action == 'cpu' %}
+            <span class="badge cpu">交 CPU（按监听表转发）</span>
+          {% else %}
+            {{ port_chips(rule.ports) }}
+            <span class="muted small">硬件转发</span>
+          {% endif %}
+        </td>
+      </tr>
+    {% else %}
+      <tr><td colspan="5" class="muted">硬件表为空：所有帧未命中后交 CPU，由监听表转发（在 CPU 帧上限允许时这是最省表项的配法）。</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</section>
+
+{% if snapshot %}
+<section class="panel">
+  <h2>监听表（CPU 转发依据 / 正确性基准）</h2>
+  <table class="data-table">
+    <thead><tr><th>#</th><th>源</th><th>组</th><th>接收端口</th></tr></thead>
+    <tbody>
+    {% for e in snapshot.listening %}
+      <tr>
+        <td class="muted">{{ loop.index }}</td>
+        <td><code>{{ e.source or '*（任意源）' }}</code></td>
+        <td><code>{{ e.group }}</code></td>
+        <td>{{ port_chips(e.ports) }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+{% if snapshot.solver.groups %}
+<section class="panel">
+  <h2>求解器分组决策</h2>
+  <table class="data-table">
+    <thead><tr><th>组</th><th>策略</th><th>表项数</th><th>回放 CPU 帧</th><th>说明</th></tr></thead>
+    <tbody>
+    {% for g in snapshot.solver.groups %}
+      <tr>
+        <td><code>{{ g.group }}</code></td>
+        <td>{% if g.kind == 'aggregate' %}<span class="badge star">(*,G) 聚合</span>
+            {% else %}<span class="badge sg">逐条 (S,G)</span>{% endif %}</td>
+        <td>{{ g.entries }}</td>
+        <td>{{ g.cpu_frames }}</td>
+        <td class="small">{{ g.description }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+{% endif %}
+{% endblock %}

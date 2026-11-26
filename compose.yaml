@@ -1,0 +1,31 @@
+services:
+  drill-console:
+    build: .
+    image: multicast-hw-drill:latest
+    container_name: multicast-hw-drill
+    ports:
+      # Primary URL: http://localhost:8000
+      - "${WEB_PORT:-8000}:8000"
+      # Optional: also expose on the conventional Flask host port 5000.
+      # Uncomment if needed; set FLASK_HOST_PORT in .env to change the host port.
+      # If host port 5000 is occupied (e.g. macOS AirPlay), pick another port.
+      # - "${FLASK_HOST_PORT:-5000}:8000"
+    environment:
+      DB_PATH: /data/drill.db
+      # Simulated device push delay; keeps the "version switch" window visible.
+      PUBLISH_DELAY: "${PUBLISH_DELAY:-0.6}"
+      # Set e.g. 0.2 to exercise random publish failures (off by default).
+      PUBLISH_FAIL_RATE: "${PUBLISH_FAIL_RATE:-0}"
+    volumes:
+      - drill-data:/data
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=3).status==200 else 1)"]
+      interval: 10s
+      timeout: 4s
+      retries: 5
+      start_period: 5s
+    restart: unless-stopped
+
+volumes:
+  drill-data:
